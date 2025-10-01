@@ -1,0 +1,5 @@
+{
+  "name": "ABNT Electrical Plan Analyzer",
+  "description": "An AI-powered application to analyze residential electrical plans (images or PDFs) for compliance with ABNT standards. It checks wire gauges, outlet placement, circuit distribution, and more, providing a detailed compliance report.",
+  "requestFramePermissions": []
+}
