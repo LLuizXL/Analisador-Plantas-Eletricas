@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import Header from './components/Header';
@@ -21,6 +20,12 @@ declare global {
 const DocumentArrowDownIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+    </svg>
+);
+
+const ShieldCheckIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.75c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.286z" />
     </svg>
 );
 
@@ -96,6 +101,7 @@ const App: React.FC = () => {
     const [fileName, setFileName] = useState<string | null>(null);
     const [generativePart, setGenerativePart] = useState<{ inlineData: { data: string, mimeType: string }} | null>(null);
 
+    const isFullyCompliant = analysisResult && analysisResult.length > 0 && analysisResult.every(item => item.status === 'CONFORME');
 
     const handleFileSelect = useCallback(async (file: File) => {
         setIsLoading(true);
@@ -225,6 +231,88 @@ const App: React.FC = () => {
         doc.save(`Relatorio_Analise_${fileName?.split('.')[0] || 'Planta'}.pdf`);
     };
 
+    const handleGenerateART = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        const drawBox = (title: string, y: number, content: string[][]) => {
+            const boxY = y + 5;
+            let contentHeight = 0;
+            doc.setFont('helvetica', 'bold');
+            doc.text(title, 14, y);
+            doc.setFont('helvetica', 'normal');
+            
+            content.forEach(([label, value], index) => {
+                const textY = boxY + 10 + (index * 7);
+                doc.setFontSize(8);
+                doc.setTextColor(100);
+                doc.text(label, 16, textY - 2);
+                doc.setFontSize(10);
+                doc.setTextColor(0);
+                doc.text(value, 16, textY + 2);
+                contentHeight = textY + 2;
+            });
+
+            doc.setLineWidth(0.2);
+            doc.rect(14, boxY - 5, 182, contentHeight - boxY + 10);
+            return contentHeight + 10;
+        };
+
+        // Header
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text("CREA - Conselho Regional de Engenharia e Agronomia", 105, 15, { align: 'center' });
+        doc.setFontSize(18);
+        doc.text("Anotação de Responsabilidade Técnica - ART", 105, 25, { align: 'center' });
+        doc.setFontSize(10);
+        doc.text("(SIMULAÇÃO GERADA POR IA - SEM VALOR LEGAL)", 105, 30, { align: 'center' });
+
+        // ART Details
+        const artNumber = `2024${Math.floor(Math.random() * 9000000) + 1000000}`;
+        const artDate = new Date().toLocaleDateString('pt-BR');
+        let finalY = drawBox("1. DADOS DA ART", 35, [
+            ["Número:", artNumber],
+            ["Data do Registro:", artDate],
+            ["Tipo:", "Obra / Serviço"],
+        ]);
+
+        // Professional Details
+        finalY = drawBox("2. DADOS DO PROFISSIONAL", finalY, [
+            ["Nome:", "Engenheiro Eletricista (Análise via IA)"],
+            ["Título:", "Engenheiro Eletricista"],
+            ["RNP/CREA:", "000000000-0 / SP (Simulado)"],
+        ]);
+
+         // Work/Service Details
+         finalY = drawBox("3. DADOS DA OBRA/SERVIÇO", finalY, [
+            ["Proprietário:", "[Nome do Proprietário]"],
+            ["Endereço:", "[Endereço da Obra]"],
+            ["Atividade Técnica:", "Análise de conformidade de projeto elétrico residencial com a norma ABNT NBR 5410, com base em documento gráfico fornecido."],
+        ]);
+
+        // Disclaimer Box
+        finalY += 10;
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(192, 57, 43); // Red
+        doc.rect(14, finalY, 182, 30);
+        doc.text("AVISO IMPORTANTE", 105, finalY + 7, { align: 'center' });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(0);
+        const disclaimerText = "Este documento é uma SIMULAÇÃO de uma Anotação de Responsabilidade Técnica (ART) gerada por um sistema de Inteligência Artificial para fins meramente ilustrativos. NÃO POSSUI VALOR LEGAL OU JURÍDICO. Uma ART válida deve ser emitida exclusivamente por um profissional de engenharia devidamente registrado no sistema CONFEA/CREA, que assume total responsabilidade técnica pelo projeto e/ou serviço.";
+        const splitDisclaimer = doc.splitTextToSize(disclaimerText, 178);
+        doc.text(splitDisclaimer, 16, finalY + 12);
+        finalY += 40;
+
+        // Signature
+        doc.text("________________________________", 105, finalY + 20, { align: 'center' });
+        doc.setFontSize(10);
+        doc.text("Assinatura do Profissional (Simulado)", 105, finalY + 25, { align: 'center' });
+
+
+        doc.save(`Simulacao_ART_${fileName?.split('.')[0] || 'Planta'}.pdf`);
+    };
+
     return (
         <div className="min-h-screen text-light-text dark:text-dark-text">
             <Header />
@@ -262,15 +350,24 @@ const App: React.FC = () => {
                     {analysisResult && (
                         <div className="mt-8 border-t pt-8 dark:border-gray-700">
                             <AnalysisResult result={analysisResult} />
-                            <div className="mt-8 text-center">
+                            <div className="mt-8 flex flex-col sm:flex-row justify-center items-center gap-4">
                                 <button
                                     onClick={handleExportPDF}
                                     disabled={isLoading}
                                     className="w-full sm:w-auto inline-flex items-center justify-center bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-300"
                                 >
                                     <DocumentArrowDownIcon className="w-5 h-5 mr-2" />
-                                    Exportar Relatório em PDF
+                                    Exportar Relatório
                                 </button>
+                                {isFullyCompliant && (
+                                    <button
+                                        onClick={handleGenerateART}
+                                        className="w-full sm:w-auto inline-flex items-center justify-center bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300"
+                                    >
+                                        <ShieldCheckIcon className="w-5 h-5 mr-2" />
+                                        Gerar Simulação de ART
+                                    </button>
+                                )}
                             </div>
                         </div>
                     )}
