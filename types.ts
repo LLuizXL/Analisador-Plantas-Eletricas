@@ -1,10 +1,15 @@
-
-export interface AnalysisItem {
+export interface AnalysisDetail {
   item: string;
-  status: 'CONFORME' | 'NÃO CONFORME' | 'NÃO FOI POSSÍVEL VERIFICAR';
   observacao: string;
 }
 
+export interface AnalysisCategory {
+  categoria: string;
+  percentualConformidade: number;
+  conformidades: AnalysisDetail[];
+  naoConformidadesOuVerificar: AnalysisDetail[];
+}
+
 export interface AnalysisResponse {
-  analise: AnalysisItem[];
+  analiseCategorizada: AnalysisCategory[];
 }

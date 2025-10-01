@@ -1,7 +1,7 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResponse } from '../types';
 
+// The API key must be obtained exclusively from the environment variable `process.env.API_KEY`.
 const API_KEY = process.env.API_KEY;
 
 if (!API_KEY) {
@@ -13,43 +13,77 @@ const ai = new GoogleGenAI({ apiKey: API_KEY });
 const analysisSchema = {
     type: Type.OBJECT,
     properties: {
-        analise: {
+        analiseCategorizada: {
             type: Type.ARRAY,
-            description: "An array of analysis results for each checked item.",
+            description: "An array of analysis results, categorized by electrical engineering topics.",
             items: {
                 type: Type.OBJECT,
                 properties: {
-                    item: {
+                    categoria: {
                         type: Type.STRING,
-                        description: "The specific aspect of the electrical plan being analyzed (e.g., 'Bitola dos Fios')."
+                        description: "The name of the analysis category (e.g., 'Condutores e Circuitos')."
                     },
-                    status: {
-                        type: Type.STRING,
-                        description: "The compliance status: 'CONFORME', 'NÃO CONFORME', or 'NÃO FOI POSSÍVEL VERIFICAR'."
+                    percentualConformidade: {
+                        type: Type.INTEGER,
+                        description: "The compliance percentage (0-100) for this category."
                     },
-                    observacao: {
-                        type: Type.STRING,
-                        description: "A detailed explanation of the finding, citing ABNT norms where applicable."
+                    conformidades: {
+                        type: Type.ARRAY,
+                        description: "A list of items that are compliant with ABNT standards.",
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                item: { type: Type.STRING, description: "The specific aspect that is compliant." },
+                                observacao: { type: Type.STRING, description: "A brief, positive confirmation." }
+                            },
+                            required: ["item", "observacao"]
+                        }
                     },
+                    naoConformidadesOuVerificar: {
+                        type: Type.ARRAY,
+                        description: "A list of items that are non-compliant or could not be verified.",
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                item: { type: Type.STRING, description: "The specific aspect with an issue." },
+                                observacao: { type: Type.STRING, description: "A detailed explanation of the issue, citing norms where applicable, or stating why it could not be verified." }
+                            },
+                            required: ["item", "observacao"]
+                        }
+                    }
                 },
-                required: ["item", "status", "observacao"],
-            },
-        },
+                required: ["categoria", "percentualConformidade", "conformidades", "naoConformidadesOuVerificar"]
+            }
+        }
     },
-    required: ["analise"],
+    required: ["analiseCategorizada"]
 };
 
 
-const systemInstruction = `Você é um engenheiro eletricista especialista em normas técnicas brasileiras, focado na ABNT NBR 5410 para instalações elétricas de baixa tensão em edificações residenciais. Sua tarefa é analisar a planta baixa elétrica fornecida e avaliar sua conformidade com as normas.
+const systemInstruction = `Você é um engenheiro eletricista especialista em normas técnicas brasileiras, focado na ABNT NBR 5410. Sua tarefa é analisar a planta baixa elétrica fornecida e avaliar sua conformidade, estruturando a resposta em categorias com percentuais de conformidade.
 
-Analise a planta elétrica na imagem e verifique os seguintes pontos:
-1.  **Bitola dos Fios (Seção dos Condutores):** Verifique se a bitola dos fios para circuitos de iluminação, tomadas de uso geral (TUGs) e tomadas de uso específico (TUEs) está adequada. O mínimo é 1,5 mm² para iluminação e 2,5 mm² para TUGs e circuitos de força.
-2.  **Pontos de Tomada (TUGs):** Verifique a quantidade e o posicionamento das TUGs em cômodos como salas e quartos (1 a cada 5m ou fração de perímetro) e cozinhas/áreas de serviço (1 a cada 3,5m ou fração de perímetro).
-3.  **Circuitos Elétricos:** Verifique se os circuitos de iluminação estão separados dos circuitos de tomadas. Equipamentos com potência superior a 10A (ex: chuveiros, fornos elétricos, ar condicionado) devem ter circuitos dedicados (TUEs).
-4.  **Dispositivos de Proteção:** Identifique se há indicação de disjuntores para cada circuito e, crucialmente, se há Dispositivos DR para proteção em áreas molhadas (banheiros, cozinhas, áreas de serviço).
-5.  **Simbologia:** Avalie se a simbologia utilizada (tomadas, pontos de luz, quadro de distribuição) está consistente com os padrões da ABNT.
+Analise a planta e divida sua avaliação nas seguintes categorias:
+1.  **Condutores e Circuitos:**
+    *   Verifique a bitola dos fios para iluminação (mín. 1,5 mm²), TUGs (mín. 2,5 mm²) e TUEs.
+    *   Verifique a separação de circuitos de iluminação e tomadas.
+    *   Verifique se equipamentos de alta potência (>10A) têm circuitos dedicados (TUEs).
+2.  **Pontos de Utilização:**
+    *   Verifique a quantidade e o posicionamento de TUGs em salas/quartos (1 a cada 5m de perímetro) e cozinhas/áreas de serviço (1 a cada 3,5m).
+    *   Verifique a altura dos pontos de tomada (baixas, médias, altas), se indicado.
+3.  **Proteção e Segurança:**
+    *   Identifique a presença de disjuntores para cada circuito.
+    *   Verifique a indicação de Dispositivos DR para áreas molhadas.
+    *   Verifique a presença do condutor de proteção (terra) em todos os pontos.
+4.  **Simbologia e Documentação:**
+    *   Avalie se a simbologia está consistente com os padrões da ABNT.
+    *   Verifique se há um quadro de cargas ou legendas claras.
 
-Formate sua resposta estritamente como um objeto JSON seguindo o schema fornecido. Para cada item, forneça um status e uma observação clara e objetiva. Se uma informação não estiver visível na planta, use o status 'NÃO FOI POSSÍVEL VERIFICAR'.`;
+Para CADA categoria, você deve:
+a) Calcular um 'percentualConformidade' (0 a 100) baseado em quantos sub-itens daquela categoria foram atendidos.
+b) Criar uma lista de 'conformidades' com os pontos que estão corretos.
+c) Criar uma lista de 'naoConformidadesOuVerificar' com os pontos que estão incorretos ou não puderam ser verificados.
+
+Formate sua resposta estritamente como um objeto JSON seguindo o schema fornecido. Se uma informação não estiver visível, inclua-a na lista 'naoConformidadesOuVerificar'.`;
 
 export const analyzeElectricalPlan = async (imageBase64: string, mimeType: string): Promise<AnalysisResponse> => {
     try {
@@ -74,7 +108,7 @@ export const analyzeElectricalPlan = async (imageBase64: string, mimeType: strin
         const jsonText = response.text.trim();
         const parsedJson = JSON.parse(jsonText) as AnalysisResponse;
 
-        if (!parsedJson.analise || !Array.isArray(parsedJson.analise)) {
+        if (!parsedJson.analiseCategorizada || !Array.isArray(parsedJson.analiseCategorizada)) {
             throw new Error("Invalid JSON structure received from API.");
         }
         

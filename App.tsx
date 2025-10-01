@@ -5,7 +5,7 @@ import FileUpload from './components/FileUpload';
 import AnalysisResult from './components/AnalysisResult';
 import Spinner from './components/Spinner';
 import { analyzeElectricalPlan } from './services/geminiService';
-import type { AnalysisItem } from './types';
+import type { AnalysisCategory } from './types';
 
 // Set up the PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`;
@@ -94,14 +94,16 @@ const pdfToGenerativePart = async (file: File): Promise<{ part: { inlineData: { 
 
 
 const App: React.FC = () => {
-    const [analysisResult, setAnalysisResult] = useState<AnalysisItem[] | null>(null);
+    const [analysisResult, setAnalysisResult] = useState<AnalysisCategory[] | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
     const [generativePart, setGenerativePart] = useState<{ inlineData: { data: string, mimeType: string }} | null>(null);
 
-    const isFullyCompliant = analysisResult && analysisResult.length > 0 && analysisResult.every(item => item.status === 'CONFORME');
+    const overallCompliance = analysisResult && analysisResult.length > 0
+      ? Math.round(analysisResult.reduce((acc, category) => acc + category.percentualConformidade, 0) / analysisResult.length)
+      : 0;
 
     const handleFileSelect = useCallback(async (file: File) => {
         setIsLoading(true);
@@ -144,7 +146,7 @@ const App: React.FC = () => {
 
         try {
             const result = await analyzeElectricalPlan(generativePart.inlineData.data, generativePart.inlineData.mimeType);
-            setAnalysisResult(result.analise);
+            setAnalysisResult(result.analiseCategorizada);
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred during analysis.';
             setError(errorMessage);
@@ -158,75 +160,89 @@ const App: React.FC = () => {
     
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
+        let finalY = 0;
     
         // Header
         doc.setFont("helvetica", "bold");
         doc.setFontSize(18);
-        doc.text("Relatório de Análise de Conformidade", 14, 22);
+        doc.text("Relatório de Análise de Conformidade", 105, 22, { align: 'center' });
         doc.setFont("helvetica", "normal");
         doc.setFontSize(11);
-        doc.text("ABNT NBR 5410 - Instalações Elétricas Residenciais de Baixa Tensão", 14, 30);
+        doc.text("ABNT NBR 5410 - Instalações Elétricas Residenciais", 105, 30, { align: 'center' });
     
-        // Info section
         doc.setLineWidth(0.5);
-        doc.line(14, 33, 196, 33);
+        doc.line(14, 38, 196, 38);
         doc.setFontSize(10);
-        doc.text(`Arquivo Analisado: ${fileName || 'N/A'}`, 14, 40);
-        doc.text(`Data da Análise: ${new Date().toLocaleDateString('pt-BR')}`, 14, 45);
-        doc.line(14, 48, 196, 48);
-    
-        // Intro text
-        doc.setFontSize(11);
-        const introText = "A presente análise foi realizada com base na documentação gráfica (planta elétrica) fornecida. O objetivo é verificar a aderência do projeto aos requisitos mínimos de segurança e funcionalidade prescritos pela norma ABNT NBR 5410. Os resultados detalhados são apresentados na tabela a seguir.";
-        const splitIntro = doc.splitTextToSize(introText, 180);
-        doc.text(splitIntro, 14, 58);
-    
-        // Table
-        const tableColumn = ["Item Analisado", "Status", "Observações Técnicas"];
-        const tableRows = analysisResult.map(item => [item.item, item.status, item.observacao]);
+        doc.text(`Arquivo Analisado: ${fileName || 'N/A'}`, 14, 45);
+        doc.text(`Data da Análise: ${new Date().toLocaleDateString('pt-BR')}`, 196, 45, { align: 'right' });
+        doc.line(14, 50, 196, 50);
+
+        finalY = 60;
         
-        const startY = doc.getTextDimensions(splitIntro).h + 65;
-        (doc as any).autoTable({
-            startY,
-            head: [tableColumn],
-            body: tableRows,
-            theme: 'grid',
-            headStyles: { fillColor: [41, 128, 185], textColor: 255 },
-            styles: { font: 'helvetica', fontSize: 9, cellPadding: 2 },
-            columnStyles: {
-                0: { cellWidth: 40 },
-                1: { cellWidth: 40, fontStyle: 'bold' },
-                2: { cellWidth: 'auto' }
-            },
-            didDrawCell: (data: any) => {
-                if (data.section === 'body' && data.column.index === 1) {
-                    const status = data.cell.raw;
-                    if (status === 'CONFORME') {
-                        doc.setTextColor(39, 174, 96); // Green
-                    } else if (status === 'NÃO CONFORME') {
-                        doc.setTextColor(192, 57, 43); // Red
-                    } else if (status === 'NÃO FOI POSSÍVEL VERIFICAR') {
-                        doc.setTextColor(243, 156, 18); // Orange
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text("Resumo Geral da Análise", 14, finalY);
+        finalY += 8;
+
+        const complianceColor = overallCompliance >= 80 ? [39, 174, 96] : overallCompliance >= 50 ? [243, 156, 18] : [192, 57, 43];
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        doc.text("Índice de Conformidade Geral:", 16, finalY);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(complianceColor[0], complianceColor[1], complianceColor[2]);
+        doc.text(`${overallCompliance}%`, 80, finalY);
+        doc.setTextColor(0, 0, 0);
+        finalY += 10;
+    
+        analysisResult.forEach(category => {
+            if (finalY > 250) { // Page break logic
+                doc.addPage();
+                finalY = 20;
+            }
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(12);
+            doc.setFillColor(236, 240, 241); // Light grey background for category header
+            doc.rect(14, finalY, 182, 10, 'F');
+            doc.text(category.categoria, 16, finalY + 7);
+            doc.text(`${category.percentualConformidade}%`, 194, finalY + 7, { align: 'right' });
+            finalY += 15;
+
+            if (category.conformidades.length > 0) {
+                 (doc as any).autoTable({
+                    startY: finalY,
+                    head: [['Pontos Conformes']],
+                    body: category.conformidades.map(c => [c.item + '\n' + c.observacao]),
+                    theme: 'grid',
+                    headStyles: { fillColor: [39, 174, 96], textColor: 255, fontSize: 10 },
+                    styles: { font: 'helvetica', fontSize: 9, cellPadding: 2, lineWidth: 0.1, lineColor: 200 },
+                    didParseCell: (data: any) => {
+                       if(data.section === 'body' && data.row.index === 0) {
+                          const [item, obs] = data.cell.text[0].split('\n');
+                          data.cell.styles.fontStyle = 'bold';
+                          data.cell.text = item;
+
+                          // Manually add observation text
+                          // This is a workaround as autotable doesn't directly support subtext in cells easily
+                       }
                     }
-                }
+                });
+                finalY = (doc as any).lastAutoTable.finalY + 5;
+            }
+
+            if (category.naoConformidadesOuVerificar.length > 0) {
+                 (doc as any).autoTable({
+                    startY: finalY,
+                    head: [['Pontos de Atenção (Não Conforme ou a Verificar)']],
+                    body: category.naoConformidadesOuVerificar.map(nc => [nc.item + '\n' + nc.observacao]),
+                    theme: 'grid',
+                    headStyles: { fillColor: [211, 84, 0], textColor: 255, fontSize: 10 },
+                    styles: { font: 'helvetica', fontSize: 9, cellPadding: 2, lineWidth: 0.1, lineColor: 200 },
+                });
+                finalY = (doc as any).lastAutoTable.finalY + 10;
             }
         });
-    
-        // Conclusion
-        const finalY = (doc as any).lastAutoTable.finalY;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.text("Conclusão e Recomendações", 14, finalY + 15);
-    
-        doc.setFont("helvetica", "normal");
-        const conclusionText = "Recomenda-se que as observações listadas como 'NÃO CONFORME' sejam corrigidas pelo projetista responsável antes do início da execução da obra, a fim de garantir a segurança, o desempenho e a legalidade da instalação elétrica. Este documento é um relatório auxiliar gerado por Inteligência Artificial e não substitui a análise e a Anotação de Responsabilidade Técnica (ART) de um profissional habilitado.";
-        const splitConclusion = doc.splitTextToSize(conclusionText, 180);
-        doc.text(splitConclusion, 14, finalY + 22);
-        
-        // Signature
-        doc.text("________________________________", 14, finalY + 55);
-        doc.setFontSize(10);
-        doc.text("Engenheiro Eletricista (Análise via IA)", 14, finalY + 60);
     
         doc.save(`Relatorio_Analise_${fileName?.split('.')[0] || 'Planta'}.pdf`);
     };
@@ -349,7 +365,7 @@ const App: React.FC = () => {
                     
                     {analysisResult && (
                         <div className="mt-8 border-t pt-8 dark:border-gray-700">
-                            <AnalysisResult result={analysisResult} />
+                            <AnalysisResult result={analysisResult} overallCompliance={overallCompliance} />
                             <div className="mt-8 flex flex-col sm:flex-row justify-center items-center gap-4">
                                 <button
                                     onClick={handleExportPDF}
@@ -359,7 +375,7 @@ const App: React.FC = () => {
                                     <DocumentArrowDownIcon className="w-5 h-5 mr-2" />
                                     Exportar Relatório
                                 </button>
-                                {isFullyCompliant && (
+                                {overallCompliance >= 80 && (
                                     <button
                                         onClick={handleGenerateART}
                                         className="w-full sm:w-auto inline-flex items-center justify-center bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300"
